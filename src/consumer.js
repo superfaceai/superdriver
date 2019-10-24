@@ -8,7 +8,7 @@
 //
 const superagent = require('superagent');
 
-class Client {
+class Consumer {
 
   //
   // Constructor
@@ -232,4 +232,4 @@ class Client {
 
 };
 
-module.exports = Client;
+module.exports = Consumer;

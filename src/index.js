@@ -1,5 +1,5 @@
-const superdriver = require('./client');
+const Consumer = require('./consumer');
 
 module.exports = {
-  superdriver
+  Consumer
 };
