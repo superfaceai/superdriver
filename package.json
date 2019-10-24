@@ -1,0 +1,9 @@
+{
+  "name": "superdriver",
+  "version": "0.1.0",
+  "description": "Level 5 autopilot",
+  "main": "index.js",
+  "repository": "https://github.com/supermodel/superdriver.git",
+  "author": "Zdenek Nemec <zdenek@me.com>",
+  "license": "MIT"
+}
