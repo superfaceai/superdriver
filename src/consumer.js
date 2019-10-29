@@ -10,12 +10,17 @@ const superagent = require('superagent');
 
 class Consumer {
 
-  //
-  // Constructor
-  //
-  constructor(providerURL, profileId) {
+  /**
+   * Superdriver profile consumer' constructor
+   * 
+   * @param {String} providerURL Provider URL – API root
+   * @param {String} profileId Profile identifier
+   * @param {String} mappingURL Optional mapping URL
+   */
+  constructor(providerURL, profileId, mappingURL) {
     this.providerURL = providerURL;
     this.profileId = profileId;
+    this.mappingURL = mappingURL;
   }
 
   /**
@@ -24,7 +29,7 @@ class Consumer {
    * @param {Object} request Request object for the affordance to perform
    * @param {String} request.operation Identifier of the affordance – operation to invoke as defined in the used ALPS profile
    * @param {Object} request.parameters Dictionary of request input parameters as defined in the used ALPS profile
-   * @param {Array<String>} request.response Array of desired response propertiest as defined in the used ALPS profile
+   * @param {Array<String>} request.response Array of desired response properties as defined in the used ALPS profile
    * 
    * @return {Promise} 
    */  
@@ -49,15 +54,19 @@ class Consumer {
     return Promise.resolve(profileResponse);
   }
 
-  //
-  //  Fetch OAS from the provider
-  //
+  /**
+   * Fetch OAS from the provider
+   */
   async fetchAPISpecification() {
     if (!this.apiSpecification) {
+      // Use provided mapping URL or hard-code guess
+      const specificationURL = (this.mappingURL && this.mappingURL.length) ? this.mappingURL : `${this.providerURL}/oas`; 
+
+      // Make the call
       try {
         const response =
           await superagent
-            .get(`${this.providerURL}/oas`)
+            .get(specificationURL)
             .set('accept', 'application/json');
         this.apiSpecification = response.body;
       }
@@ -70,9 +79,11 @@ class Consumer {
     return Promise.resolve(this.apiSpecification);
   }
 
-  //
-  //  Find operation with given x-profile affordanceId
-  //
+  /**
+   * Find operation with given x-profile affordanceId
+   * 
+   * @param {String} affordanceId 
+   */
   findOperation(affordanceId) {
     if (!this.apiSpecification || !this.profileId) {
       return null;
@@ -112,9 +123,12 @@ class Consumer {
     return null;
   }
 
-  //
-  //  Build the request from operation information and parameters
-  //
+  /**
+   * Build the request from operation information and parameters
+   * 
+   * @param {String} operation 
+   * @param {Object} parameters 
+   */
   buildRequest(operation, parameters) {
     const url = `${this.providerURL}${operation.url}`;
     const method = operation.method;
