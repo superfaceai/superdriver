@@ -7,6 +7,8 @@
 //  In theory, the client can be changed to use many protocols and API styles at the same type and not just HTTP.
 //
 const superagent = require('superagent');
+const debug = require('debug')('superdriver:consumer');
+const SwaggerParser = require("swagger-parser");
 
 class Consumer {
 
@@ -32,24 +34,28 @@ class Consumer {
    * @param {Array<String>} request.response Array of desired response properties as defined in the used ALPS profile
    * 
    * @return {Promise} 
-   */  
+   */
   async perform(request) {
-    console.log('---> invoking ', request.operation, request.parameters, this.providerURL);
+    debug(`performing '${request.operation}' for ${this.providerURL} service`);
+    debug(`  parameters: ${JSON.stringify(request.parameters)}`);
+    debug(`  expected response: ${JSON.stringify(request.response)}`);
 
     // Fetch OpenAPI Specification (if not already)
     await this.fetchAPISpecification();
 
     // Find in OpenAPI Specification the operation with given Profile's affordance id
-    const operation = this.findOperation(request.operation);
+    const oasOperation = this.findOperation(request.operation);
 
     // Build HTTP request according to OpenAPI Specification and Profile request
-    const httpRequest = this.buildRequest(operation, request.parameters);
+    const httpRequest = this.buildRequest(request.operation, oasOperation, request.parameters);
 
     // Execute the request
     const httpResponse = await this.execute(httpRequest);
 
     // Normalize the response, translating it from the HTTP response to Profile
-    const profileResponse = this.normalizeResponse(operation, httpResponse, request.response);
+    const profileResponse = this.normalizeResponse(oasOperation, httpResponse, request.response);
+
+    debug('result:', profileResponse);
 
     return Promise.resolve(profileResponse);
   }
@@ -60,7 +66,8 @@ class Consumer {
   async fetchAPISpecification() {
     if (!this.apiSpecification) {
       // Use provided mapping URL or hard-code guess
-      const specificationURL = (this.mappingURL && this.mappingURL.length) ? this.mappingURL : `${this.providerURL}/oas`; 
+      const specificationURL = (this.mappingURL && this.mappingURL.length) ? this.mappingURL : `${this.providerURL}/oas`;
+      debug(`fetching API specification from ${specificationURL}`);
 
       // Make the call
       try {
@@ -68,10 +75,15 @@ class Consumer {
           await superagent
             .get(specificationURL)
             .set('accept', 'application/json');
-        this.apiSpecification = response.body;
+
+        if (response.noContent || !response.body) {
+          return Promise.reject('No API specification found');
+        }
+
+        this.apiSpecification = await SwaggerParser.dereference(response.body);
+        debug(`  retrieved API specification (${response.text.length}B)`);
       }
       catch (e) {
-        // console.error(e);
         return Promise.reject(e);
       };
     }
@@ -80,7 +92,7 @@ class Consumer {
   }
 
   /**
-   * Find operation with given x-profile affordanceId
+   * Find operation with given x-profile affordance id
    * 
    * @param {String} affordanceId 
    */
@@ -100,14 +112,17 @@ class Consumer {
         const operation = path[operationKey];
 
         if (operation['x-profile'] === fullProfileAffordanceId) {
+          debug(`found operation mapping`);
+
           // Find response schema
           let responseSchema = null;
           for (const responseCode in operation.responses) {
             if (responseCode[0] === '2') {
-              responseSchema = operation.responses[responseCode].content['application/json'].schema; // TODO: Don't assume content type
+              if (operation.responses[responseCode].content && operation.responses[responseCode].content['application/json'] && operation.responses[responseCode].content['application/json'].schema)
+                responseSchema = operation.responses[responseCode].content['application/json'].schema; // TODO: Don't assume content type
             }
           }
-          // console.log('response schema', responseSchema)
+          debug(`  operation response schema: ${responseSchema ? 'yes' : 'no'}`);
 
           // Return operation data
           return {
@@ -126,12 +141,13 @@ class Consumer {
   /**
    * Build the request from operation information and parameters
    * 
-   * @param {String} operation 
+   * @param {String} affordanceId
+   * @param {String} oasOperation
    * @param {Object} parameters 
    */
-  buildRequest(operation, parameters) {
-    const url = `${this.providerURL}${operation.url}`;
-    const method = operation.method;
+  buildRequest(affordanceId, oasOperation, parameters) {
+    const url = `${this.providerURL}${oasOperation.url}`;
+    const method = oasOperation.method;
     let headers = {};
     let query = [];
     let body = null;
@@ -139,18 +155,18 @@ class Consumer {
     // Fully qualified the input parameters
     let inputParameters = {}
     for (const parameterId in parameters) {
-      inputParameters[`${this.profileId}#${parameterId}`] = parameters[parameterId];
+      inputParameters[`${this.profileId}#${affordanceId}/${parameterId}`] = parameters[parameterId];
     }
-    //console.log('fully qualified input parameters\n', inputParameters);
+    debug('fully qualified input parameters:', JSON.stringify(inputParameters));
 
     //
     // Process OAS parameters
     //
-    if (operation.details.parameters) {
-      operation.details.parameters.forEach(parameter => {
+    if (oasOperation.details.parameters) {
+      oasOperation.details.parameters.forEach(parameter => {
         const fullParmeterId = parameter['x-profile'];
         if (fullParmeterId in inputParameters) {
-          // console.log(`processing parameter...\n`, parameter);
+          // debug(`processing parameter...\n`, parameter);
 
           if (parameter.in === 'query') {
             // Query parameters
@@ -166,22 +182,40 @@ class Consumer {
     //
     // Process OAS requestBody
     //
-    if (operation.details.requestBody) {
-      // TODO: do not blindly assume application/json of object type
-      const schema = operation.details.requestBody.content['application/json'].schema;
-      headers['content-type'] = 'application/json'
-      body = {};
+    if (oasOperation.details.requestBody) {
+      // Iterate available request media types
+      let requestContentTypes = [];
+      for (const mediaType in oasOperation.details.requestBody.content) {
+        debug(`request media type: '${mediaType}'`);
 
-      // Naive, flat traversal
-      // TODO: revisit for real objects
-      const schemaProperties = schema.properties;
-      for (const propertyKey in schemaProperties) {
-        if (schemaProperties[propertyKey]['x-profile']) {
-          const propertyId = schemaProperties[propertyKey]['x-profile'];
-          if (propertyId in inputParameters) {
-            body[propertyKey] = inputParameters[propertyId];
+        if (mediaType !== 'application/json' &&
+          mediaType !== 'application/x-www-form-urlencoded') {
+          debug('the request media type not yet supported, please contact makers');
+          return null;
+        }
+
+        const requestContentType = {
+          mediaType: mediaType,
+          body: {}
+        };
+
+        // TODO: Naive, flat traversal, revisit for real objects
+        const schemaProperties = oasOperation.details.requestBody.content[mediaType].schema.properties;
+        for (const propertyKey in schemaProperties) {
+          if (schemaProperties[propertyKey]['x-profile']) {
+            const propertyId = schemaProperties[propertyKey]['x-profile'];
+            if (propertyId in inputParameters) {
+              requestContentType.body[propertyKey] = inputParameters[propertyId];
+            }
           }
         }
+        requestContentTypes.push(requestContentType);
+      }
+
+      if (requestContentTypes.length) {
+        // TODO: Happy case – pick the first supported media type
+        headers['content-type'] = requestContentTypes[0].mediaType;
+        body = requestContentTypes[0].body;
       }
     }
 
@@ -198,11 +232,10 @@ class Consumer {
   //
   async execute(request) {
     // Log the request we are making
-    console.log(`\n${request.method.toUpperCase()} ${request.url}${(request.query.length) ? '?' + request.query.join('&') : ''}`);
-    console.log(`headers:`, JSON.stringify(request.headers));
+    debug(`${request.method.toUpperCase()} ${request.url}${(request.query.length) ? '?' + request.query.join('&') : ''}`);
+    debug(`  headers:`, JSON.stringify(request.headers));
     if (request.body)
-      console.log(`body:`, JSON.stringify(request.body))
-    console.log();
+      debug(`  body:`, JSON.stringify(request.body))
 
     try {
       let response =
@@ -213,6 +246,7 @@ class Consumer {
           .set(request.headers)
           .send(request.body);
 
+      debug('http response:', response.body);
       return Promise.resolve(response.body);
     }
     catch (e) {
@@ -224,11 +258,18 @@ class Consumer {
   // Normalizes the response to the profile
   //
   normalizeResponse(operation, response, requestedResponse) {
+    // Sanity check
+    if (!operation.responseSchema) {
+      debug('no response mapping');
+      return null;
+    }
+
     // Fully qualify the requested response
     let qualifiedProperties = [];
     requestedResponse.forEach((element) => {
       qualifiedProperties.push(`${this.profileId}#${element}`);
     });
+    debug('fully qualified response properties', qualifiedProperties);
 
     // Naive, flat traversal
     // TODO: revisit for real objects
@@ -243,7 +284,10 @@ class Consumer {
 
     return result;
   }
-
 };
+
+// function IsEmptyObject(obj) {
+//   return Object.keys(obj).length === 0;
+// }
 
 module.exports = Consumer;
