@@ -10,6 +10,11 @@ const superagent = require('superagent');
 const debug = require('debug')('superdriver:consumer');
 const SwaggerParser = require("swagger-parser");
 
+const OAS_PROFILE_KEY = 'x-profile';
+const OAS_SUPER_KEY = 'x-super';
+const OAS_SUPER_SOURCE_KEY = 'source';
+const OAS_SOURCE_BASIC_USER = 'security-basic-user';
+
 class Consumer {
   /**
    * Superdriver profile consumer' constructor
@@ -113,7 +118,7 @@ class Consumer {
       for (const operationKey in path) {
         const operation = path[operationKey];
 
-        if (operation['x-profile'] === fullProfileAffordanceId) {
+        if (operation[OAS_PROFILE_KEY] === fullProfileAffordanceId) {
           debug(`found operation mapping`);
 
           // Find response schema
@@ -148,7 +153,7 @@ class Consumer {
    * @param {Object} parameters
    */
   buildRequest(affordanceId, oasOperation, parameters) {
-    const url = `${this.providerURL}${oasOperation.url}`;
+    let url = `${this.providerURL}${oasOperation.url}`;
     const method = oasOperation.method;
     let headers = {};
     let query = [];
@@ -166,17 +171,48 @@ class Consumer {
     //
     if (oasOperation.details.parameters) {
       oasOperation.details.parameters.forEach(parameter => {
-        const fullParmeterId = parameter['x-profile'];
-        if (fullParmeterId in inputParameters) {
-          // debug(`processing parameter...\n`, parameter);
+        debug(`processing parameter...\n`, parameter);
 
+        // is parameter required?
+        const isRequired = ('required' in parameter) ? parameter.required : false;
+        
+        // what is parameter full profile id?
+        const fullParameterId = (OAS_PROFILE_KEY in parameter) ? parameter[OAS_PROFILE_KEY] : undefined;
+        
+        // is parameter provided in user's input?
+        const isProvided = (fullParameterId && (fullParmeterId in inputParameters)) ? true : false;
+        
+        // parameter value if provided
+        let parameterValue = undefined;
+        if (isProvided) {
+          parameterValue = inputParameters[fullParmeterId];
+        }
+
+        // try super metadata
+        if (!isProvided && (OAS_SUPER_KEY in parameter)) {
+          if (OAS_SUPER_SOURCE_KEY in parameter[OAS_SUPER_KEY]) {
+            if (parameter[OAS_SUPER_KEY][OAS_SUPER_SOURCE_KEY] === OAS_SOURCE_BASIC_USER) {
+              if (this.authentication && ('basic' in this.authentication))
+              parameterValue = this.authentication['basic'].user; // Use authentication user as the value
+            }
+          }
+        }
+         
+        debug(`is required ${isRequired}, profile id: ${fullParameterId}, provided: ${isProvided}, value: ${parameterValue}`);
+        
+        if (isProvided || parameterValue) {
           if (parameter.in === 'query') {
             // Query parameters
-            query.push(`${parameter.name}=${inputParameters[fullParmeterId]}`);  //TODO: pct-escape value
+            query.push(`${parameter.name}=${parameterValue}`);
           }
           else {
-            console.error(`parameters in '${parameter.in}' are not supported, yet`);
+            // Brute-force replace
+            url = url.replace(`{${parameter.name}}`, parameterValue); // Consider proper RFC6570, tooling
           }
+        }
+        else if (isRequired) {
+          console.error(`required parameter '${parameter.name}' (profile id: '${fullParameterId}') not provided`);
+          return null;
         }
       });
     }
@@ -204,8 +240,8 @@ class Consumer {
         // TODO: Naive, flat traversal, revisit for real objects
         const schemaProperties = oasOperation.details.requestBody.content[mediaType].schema.properties;
         for (const propertyKey in schemaProperties) {
-          if (schemaProperties[propertyKey]['x-profile']) {
-            const propertyId = schemaProperties[propertyKey]['x-profile'];
+          if (schemaProperties[propertyKey][OAS_PROFILE_KEY]) {
+            const propertyId = schemaProperties[propertyKey][OAS_PROFILE_KEY];
             if (propertyId in inputParameters) {
               requestContentType.body[propertyKey] = inputParameters[propertyId];
             }
@@ -288,8 +324,8 @@ class Consumer {
         }
 
         if (securityId === 'basic') {
-          debug('basic auth:', this.authentication[securityId].username); // do not log password!
-          httpRequest.auth(this.authentication[securityId].username, this.authentication[securityId].password);
+          debug('  basic auth:', this.authentication[securityId].user); // do not log password!
+          httpRequest.auth(this.authentication[securityId].user, this.authentication[securityId].password);
         }
         else {
           return Promise.reject(`security '${securityId}' not yet supported, contact makers`);
@@ -329,7 +365,7 @@ class Consumer {
     const result = {}
     const schemaProperties = operation.responseSchema.properties;
     for (const property in schemaProperties) {
-      const index = qualifiedProperties.indexOf(schemaProperties[property]['x-profile']);
+      const index = qualifiedProperties.indexOf(schemaProperties[property][OAS_PROFILE_KEY]);
       if (index >= 0) {
         result[requestedResponse[index]] = response[property];
       }
