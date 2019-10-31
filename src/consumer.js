@@ -11,29 +11,31 @@ const debug = require('debug')('superdriver:consumer');
 const SwaggerParser = require("swagger-parser");
 
 class Consumer {
-
   /**
    * Superdriver profile consumer' constructor
-   * 
-   * @param {String} providerURL Provider URL – API root
-   * @param {String} profileId Profile identifier
-   * @param {String} mappingURL Optional mapping URL
+   *
+   * @param {Object} service Information about the provider service
+   * @param {String} service.serviceURL Service URL
+   * @param {String} service.profileId Profile identifier
+   * @param {String} service.mappingURL Optional mapping URL
+   * @param {Object} service.authentication Optional Credentials for authentication
    */
-  constructor(providerURL, profileId, mappingURL) {
-    this.providerURL = providerURL;
-    this.profileId = profileId;
-    this.mappingURL = mappingURL;
+  constructor(service) {
+    this.providerURL = service.serviceURL;
+    this.profileId = service.profileId;
+    this.mappingURL = service.mappingURL;
+    this.authentication = service.authentication;
   }
 
   /**
    * Invoke a profile's affordance identified in the request
-   * 
+   *
    * @param {Object} request Request object for the affordance to perform
    * @param {String} request.operation Identifier of the affordance – operation to invoke as defined in the used ALPS profile
    * @param {Object} request.parameters Dictionary of request input parameters as defined in the used ALPS profile
    * @param {Array<String>} request.response Array of desired response properties as defined in the used ALPS profile
-   * 
-   * @return {Promise} 
+   *
+   * @return {Promise}
    */
   async perform(request) {
     debug(`performing '${request.operation}' for ${this.providerURL} service`);
@@ -93,8 +95,8 @@ class Consumer {
 
   /**
    * Find operation with given x-profile affordance id
-   * 
-   * @param {String} affordanceId 
+   *
+   * @param {String} affordanceId
    */
   findOperation(affordanceId) {
     if (!this.apiSpecification || !this.profileId) {
@@ -140,10 +142,10 @@ class Consumer {
 
   /**
    * Build the request from operation information and parameters
-   * 
+   *
    * @param {String} affordanceId
    * @param {String} oasOperation
-   * @param {Object} parameters 
+   * @param {Object} parameters
    */
   buildRequest(affordanceId, oasOperation, parameters) {
     const url = `${this.providerURL}${oasOperation.url}`;
@@ -219,12 +221,43 @@ class Consumer {
       }
     }
 
-    // TODO: Process other elements like headers, consumes / produces and authentication
+    //
+    // Process OAS Security
+    //
+    let security = [];
+    if (oasOperation.details.security) {
+      // Sanity check
+      if(!this.apiSpecification.components || !this.apiSpecification.components.securitySchemes) {
+        debug.error('security specified but no security components found');
+        return null;
+      }
+      const securityComponent = this.apiSpecification.components.securitySchemes;
+      // debug(securityComponent);
+
+      // Pick the security id
+      const operationSecurity = oasOperation.details.security;
+      operationSecurity.forEach(item => {
+        const securityId = Object.keys(item)[0];
+        // debug('procesing security ID:', securityId);
+
+        // Figure out what schema the security id is
+        if (!(securityId in securityComponent)) {
+          debug(`security '${securityId}' is not defined in security components`);
+          return null;
+        }
+        const securityType = securityComponent[securityId].scheme;
+        debug('security type:', securityType);
+        security.push(securityType);
+      });
+
+    }
+
+    // TODO: Process other elements like headers, consumes / produces
 
     // Always accept JSON
     headers['accept'] = 'application/json';
 
-    return { url, method, query, headers, body };
+    return { url, method, query, headers, body, security };
   }
 
   //
@@ -238,13 +271,33 @@ class Consumer {
       debug(`  body:`, JSON.stringify(request.body))
 
     try {
-      let response =
-        await superagent(
-          request.method,
-          request.url)
-          .query(request.query.join('&'))
-          .set(request.headers)
-          .send(request.body);
+      // Method and URL
+      const httpRequest = superagent(request.method, request.url);
+
+      // Query parameters
+      httpRequest.query(request.query.join('&'));
+
+      // Request headers
+      httpRequest.set(request.headers);
+
+      // Authentication
+      if(request.security && request.security.length) {
+        const securityId = request.security[0]; // Pick first available
+        if (!(securityId in this.authentication)) {
+          return Promise.reject(`security '${securityId}' credentials not provided`);
+        }
+
+        if (securityId === 'basic') {
+          debug('basic auth:', this.authentication[securityId].username); // do not log password!
+          httpRequest.auth(this.authentication[securityId].username, this.authentication[securityId].password);
+        }
+        else {
+          return Promise.reject(`security '${securityId}' not yet supported, contact makers`);
+        }
+      }
+
+      // Make the call
+      const response = await httpRequest.send(request.body);
 
       debug('http response:', response.body);
       return Promise.resolve(response.body);
