@@ -13,7 +13,18 @@ const SwaggerParser = require("swagger-parser");
 const OAS_PROFILE_KEY = 'x-profile';
 const OAS_SUPER_KEY = 'x-super';
 const OAS_SUPER_SOURCE_KEY = 'source';
-const OAS_SOURCE_BASIC_USER = 'security-basic-user';
+const OAS_SUPER_VALUE_KEY = 'value';
+
+const OAS_SOURCE = {
+  basic: {
+    user: 'security-basic-user',
+    password: 'security-basic-password',
+  },
+  apikey: {
+    key: 'security-apikey-key',
+    secret: 'security-apikey-secret'
+  }
+}
 
 class Consumer {
   /**
@@ -171,17 +182,17 @@ class Consumer {
     //
     if (oasOperation.details.parameters) {
       oasOperation.details.parameters.forEach(parameter => {
-        debug(`processing parameter...\n`, parameter);
+        // debug(`processing parameter...\n`, parameter);
 
         // is parameter required?
         const isRequired = ('required' in parameter) ? parameter.required : false;
-        
+
         // what is parameter full profile id?
         const fullParameterId = (OAS_PROFILE_KEY in parameter) ? parameter[OAS_PROFILE_KEY] : undefined;
-        
+
         // is parameter provided in user's input?
         const isProvided = (fullParameterId && (fullParmeterId in inputParameters)) ? true : false;
-        
+
         // parameter value if provided
         let parameterValue = undefined;
         if (isProvided) {
@@ -191,15 +202,19 @@ class Consumer {
         // try super metadata
         if (!isProvided && (OAS_SUPER_KEY in parameter)) {
           if (OAS_SUPER_SOURCE_KEY in parameter[OAS_SUPER_KEY]) {
-            if (parameter[OAS_SUPER_KEY][OAS_SUPER_SOURCE_KEY] === OAS_SOURCE_BASIC_USER) {
+            // Find the source of value and use it
+            if (parameter[OAS_SUPER_KEY][OAS_SUPER_SOURCE_KEY] === OAS_SOURCE.basic.user) {
               if (this.authentication && ('basic' in this.authentication))
-              parameterValue = this.authentication['basic'].user; // Use authentication user as the value
+                parameterValue = this.authentication['basic'].user; // Use authentication user as the value
             }
           }
+          else if (OAS_SUPER_VALUE_KEY in parameter[OAS_SUPER_KEY]) {
+            // Use mapping-provided value directly
+            parameterValue = parameter[OAS_SUPER_KEY][OAS_SUPER_VALUE_KEY];
+          }
         }
-         
-        debug(`is required ${isRequired}, profile id: ${fullParameterId}, provided: ${isProvided}, value: ${parameterValue}`);
-        
+        // debug(`  is required ${isRequired}, profile id: ${fullParameterId}, provided: ${isProvided}, value: ${parameterValue}`);
+
         if (isProvided || parameterValue) {
           if (parameter.in === 'query') {
             // Query parameters
@@ -238,6 +253,7 @@ class Consumer {
         };
 
         // TODO: Naive, flat traversal, revisit for real objects
+        // TODO: validate if a property is required
         const schemaProperties = oasOperation.details.requestBody.content[mediaType].schema.properties;
         for (const propertyKey in schemaProperties) {
           if (schemaProperties[propertyKey][OAS_PROFILE_KEY]) {
@@ -246,10 +262,22 @@ class Consumer {
               requestContentType.body[propertyKey] = inputParameters[propertyId];
             }
           }
+          else if (schemaProperties[propertyKey][OAS_SUPER_KEY]) {
+            // Check if source of the value parameter value is specified
+            if (schemaProperties[propertyKey][OAS_SUPER_KEY].source === OAS_SOURCE.apikey.key) {
+              // Source of the value is apikey's key
+              if (this.authentication && ('apikey' in this.authentication))
+                requestContentType.body[propertyKey] = this.authentication['apikey'].key;
+            }
+            else if (schemaProperties[propertyKey][OAS_SUPER_KEY].source === OAS_SOURCE.apikey.secret) {
+              // Source of the value is apikey's secret
+              if (this.authentication && ('apikey' in this.authentication))
+                requestContentType.body[propertyKey] = this.authentication['apikey'].secret;              
+            }
+          }
         }
         requestContentTypes.push(requestContentType);
       }
-
       if (requestContentTypes.length) {
         // TODO: Happy case – pick the first supported media type
         headers['content-type'] = requestContentTypes[0].mediaType;
@@ -263,7 +291,7 @@ class Consumer {
     let security = [];
     if (oasOperation.details.security) {
       // Sanity check
-      if(!this.apiSpecification.components || !this.apiSpecification.components.securitySchemes) {
+      if (!this.apiSpecification.components || !this.apiSpecification.components.securitySchemes) {
         debug.error('security specified but no security components found');
         return null;
       }
@@ -317,7 +345,7 @@ class Consumer {
       httpRequest.set(request.headers);
 
       // Authentication
-      if(request.security && request.security.length) {
+      if (request.security && request.security.length) {
         const securityId = request.security[0]; // Pick first available
         if (!(securityId in this.authentication)) {
           return Promise.reject(`security '${securityId}' credentials not provided`);
