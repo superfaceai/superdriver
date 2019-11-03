@@ -63,6 +63,9 @@ class Consumer {
 
     // Find in OpenAPI Specification the operation with given Profile's affordance id
     const oasOperation = this.findOperation(request.operation);
+    if (!oasOperation) {
+      return Promise.reject(`No operation found for '${request.operation}`);
+    }
 
     // Build HTTP request according to OpenAPI Specification and Profile request
     const httpRequest = this.buildRequest(request.operation, oasOperation, request.parameters);
@@ -124,6 +127,7 @@ class Consumer {
     // Iterate paths
     for (const pathKey in this.apiSpecification.paths) {
       const path = this.apiSpecification.paths[pathKey];
+      debug('path', pathKey, path);
 
       // Iterate operations
       for (const operationKey in path) {
@@ -153,6 +157,7 @@ class Consumer {
       }
     };
 
+    debug(`  no operation found for '${affordanceId}'`); // TODO: throw / reject
     return null;
   }
 
@@ -191,12 +196,12 @@ class Consumer {
         const fullParameterId = (OAS_PROFILE_KEY in parameter) ? parameter[OAS_PROFILE_KEY] : undefined;
 
         // is parameter provided in user's input?
-        const isProvided = (fullParameterId && (fullParmeterId in inputParameters)) ? true : false;
+        const isProvided = (fullParameterId && (fullParameterId in inputParameters)) ? true : false;
 
         // parameter value if provided
         let parameterValue = undefined;
         if (isProvided) {
-          parameterValue = inputParameters[fullParmeterId];
+          parameterValue = inputParameters[fullParameterId];
         }
 
         // try super metadata
@@ -213,7 +218,7 @@ class Consumer {
             parameterValue = parameter[OAS_SUPER_KEY][OAS_SUPER_VALUE_KEY];
           }
         }
-        // debug(`  is required ${isRequired}, profile id: ${fullParameterId}, provided: ${isProvided}, value: ${parameterValue}`);
+        //debug(`  is required ${isRequired}, profile id: ${fullParameterId}, provided: ${isProvided}, value: ${parameterValue}`);
 
         if (isProvided || parameterValue) {
           if (parameter.in === 'query') {
@@ -272,7 +277,7 @@ class Consumer {
             else if (schemaProperties[propertyKey][OAS_SUPER_KEY].source === OAS_SOURCE.apikey.secret) {
               // Source of the value is apikey's secret
               if (this.authentication && ('apikey' in this.authentication))
-                requestContentType.body[propertyKey] = this.authentication['apikey'].secret;              
+                requestContentType.body[propertyKey] = this.authentication['apikey'].secret;
             }
           }
         }
