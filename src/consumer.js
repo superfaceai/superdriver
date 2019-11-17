@@ -6,9 +6,12 @@
 //  Instead, it relies on ALPS profile and OpenAPI Specification to figure out what HTTP call needs to be done.
 //  In theory, the client can be changed to use many protocols and API styles at the same type and not just HTTP.
 //
-const superagent = require('superagent');
-const debug = require('debug')('superdriver:consumer');
-const SwaggerParser = require("swagger-parser");
+import Debug from 'debug';
+import fetch from 'isomorphic-fetch'
+import SwaggerParser from 'swagger-parser'
+import * as base64 from './base64'
+
+const debug = Debug('superdriver:consumer');
 
 const OAS_PROFILE_KEY = 'x-profile';
 const OAS_SUPER_KEY = 'x-super';
@@ -26,7 +29,7 @@ const OAS_SOURCE = {
   }
 }
 
-class Consumer {
+export class Consumer {
   /**
    * Superdriver profile consumer' constructor
    *
@@ -92,16 +95,20 @@ class Consumer {
 
       // Make the call
       try {
-        const response =
-          await superagent
-            .get(specificationURL)
-            .set('accept', 'application/json');
+        const response = await fetch(specificationURL, {
+          headers: {
+            'Accept': 'application/json'
+          }
+        })
 
-        if (response.noContent || !response.body) {
+        // TODO: handle empty state better
+        const body = await response.json()
+
+        if (!response.body) {
           return Promise.reject('No API specification found');
         }
 
-        this.apiSpecification = await SwaggerParser.dereference(response.body);
+        this.apiSpecification = await SwaggerParser.dereference(body);
         debug(`  retrieved API specification (${response.text.length}B)`);
       }
       catch (e) {
@@ -109,7 +116,7 @@ class Consumer {
       };
     }
 
-    return Promise.resolve(this.apiSpecification);
+    return this.apiSpecification;
   }
 
   /**
@@ -336,40 +343,50 @@ class Consumer {
     // Log the request we are making
     debug(`${request.method.toUpperCase()} ${request.url}${(request.query.length) ? '?' + request.query.join('&') : ''}`);
     debug(`  headers:`, JSON.stringify(request.headers));
+
     if (request.body)
       debug(`  body:`, JSON.stringify(request.body))
 
     try {
       // Method and URL
-      const httpRequest = superagent(request.method, request.url);
+      let url = request.url
 
-      // Query parameters
-      httpRequest.query(request.query.join('&'));
-
-      // Request headers
-      httpRequest.set(request.headers);
+      if (request.query) {
+        if (url.includes('?')) {
+          url = `${url}&${request.query.join('&')}`
+        } else {
+          url = `${url}?${request.query.join('&')}`
+        }
+      }
 
       // Authentication
       if (request.security && request.security.length) {
         const securityId = request.security[0]; // Pick first available
+
         if (!(securityId in this.authentication)) {
           return Promise.reject(`security '${securityId}' credentials not provided`);
         }
 
+        const security = this.authentication[securityId]
+
         if (securityId === 'basic') {
-          debug('  basic auth:', this.authentication[securityId].user); // do not log password!
-          httpRequest.auth(this.authentication[securityId].user, this.authentication[securityId].password);
+          debug('  basic auth:', security.user); // do not log password!
+
+          request.headers['Authorization'] = `Basic ${base64.encode(security.user + ":" + security.password)}`
         }
         else {
           return Promise.reject(`security '${securityId}' not yet supported, contact makers`);
         }
       }
 
-      // Make the call
-      const response = await httpRequest.send(request.body);
+      const response = await fetch(url, {
+        body:    request.body,
+        headers: request.headers,
+        method:  request.method,
+      });
 
       debug('http response:', response.body);
-      return Promise.resolve(response.body);
+      return response.json()
     }
     catch (e) {
       return Promise.reject(e);
@@ -411,5 +428,3 @@ class Consumer {
 // function IsEmptyObject(obj) {
 //   return Object.keys(obj).length === 0;
 // }
-
-module.exports = Consumer;

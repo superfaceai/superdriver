@@ -1,7 +1,6 @@
-const superagent = require('superagent');
+import fetch from 'isomorphic-fetch'
 
-class Register {
-
+export class Register {
   /**
    * Service Register proxy
    *
@@ -13,24 +12,30 @@ class Register {
 
   /**
    * Find services in the register that conform to a profile
-   * 
+   *
    * @param {String} profileId Id of the profile the matching sarvice has to support
    */
   async findServices(profileId) {
-    const response =
-      await superagent
-        .get(`${this.registerURL}/search/`)
-        .query({ semanticProfile: profileId })
-        .set('accept', 'application/json')
+    try {
+      const response = await fetch(
+        `${this.registerURL}/search?semanticProfile=${encodeURIComponent(profileId)}`,
+        {
+          headers: {
+            'Accept': 'application/json'
+          }
+        }
+      )
 
-    const services = response.body['disco'];
-    if (!services || !services.length)
-      return Promise.reject(`No service for profile '${profileId}' found.`);
+      const body = await response.json()
+      const services = body['disco'];
 
-    return services;
+      if (!services || !services.length) {
+        throw(`No service for profile '${profileId}' found.`)
+      }
+
+      return services;
+    } catch(error) {
+      throw(`Error while fetching profile ${profileId}: ${error.message}`)
+    }
   }
 }
-
-module.exports = Register;
-
-
