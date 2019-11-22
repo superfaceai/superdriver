@@ -25,7 +25,7 @@
     "swagger-parser": "^8.0.3"
   },
   "devDependencies": {
-    "microbundle": "0.11.0",
+    "microbundle": "https://github.com/developit/microbundle.git#v0.12.0-next.6",
     "parcel-bundler": "1.12.4",
     "regenerator-runtime": "0.13.3"
   }
