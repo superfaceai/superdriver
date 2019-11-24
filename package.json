@@ -2,13 +2,31 @@
   "name": "superdriver",
   "version": "0.6.0",
   "description": "Level 5 autonomous client",
-  "main": "src/index.js",
+  "source": "src/superdriver.js",
+  "main": "dist/superdriver.js",
+  "module": "dist/superdriver.mjs",
+  "unpkg": "dist/superdriver.umd.js",
+  "types": "dist/superdriver.d.ts",
   "repository": "https://github.com/supermodel/superdriver.git",
   "author": "Zdenek Nemec <zdenek@me.com>",
   "license": "MIT",
+  "scripts": {
+    "build": "microbundle",
+    "build:watch": "yarn build watch",
+    "cleanup": "rm -rf dist",
+    "prebuild": "yarn cleanup",
+    "prepare": "yarn build",
+    "example:browser": "parcel serve -o ./.parceljs example/browser/index.html",
+    "example:node": "node example/node/index.js"
+  },
   "dependencies": {
     "debug": "^4.1.1",
-    "superagent": "^5.1.0",
+    "isomorphic-fetch": "2.2.1",
     "swagger-parser": "^8.0.3"
+  },
+  "devDependencies": {
+    "microbundle": "https://github.com/developit/microbundle.git#v0.12.0-next.6",
+    "parcel-bundler": "1.12.4",
+    "regenerator-runtime": "0.13.3"
   }
 }
