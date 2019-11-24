@@ -18,7 +18,7 @@ export class Register {
   async findServices(profileId) {
     try {
       const response = await fetch(
-        `${this.registerURL}/search?semanticProfile=${encodeURIComponent(profileId)}`,
+        `${this.registerURL}/find?semanticProfile=${encodeURIComponent(profileId)}`,
         {
           headers: {
             'Accept': 'application/json'
