@@ -34,15 +34,15 @@ export class Consumer {
    * Superdriver profile consumer' constructor
    *
    * @param {Object} service Information about the provider service
-   * @param {String} service.serviceURL Service URL
+   * @param {String} service.url Service URL
    * @param {String} service.profileId Profile identifier
-   * @param {String} service.mappingURL Optional mapping URL
+   * @param {String} service.mappingUrl Optional mapping URL
    * @param {Object} service.authentication Optional Credentials for authentication
    */
   constructor(service) {
-    this.providerURL = service.serviceURL;
+    this.providerUrl = service.url;
     this.profileId = service.profileId;
-    this.mappingURL = service.mappingURL;
+    this.mappingUrl = service.mappingUrl;
     this.authentication = service.authentication;
   }
 
@@ -57,7 +57,7 @@ export class Consumer {
    * @return {Promise}
    */
   async perform(request) {
-    debug(`performing '${request.operation}' for ${this.providerURL} service`);
+    debug(`performing '${request.operation}' for ${this.providerUrl} service`);
     debug(`  parameters: ${JSON.stringify(request.parameters)}`);
     debug(`  expected response: ${JSON.stringify(request.response)}`);
 
@@ -90,7 +90,7 @@ export class Consumer {
   async fetchAPISpecification() {
     if (!this.apiSpecification) {
       // Use provided mapping URL or hard-code guess
-      const specificationURL = (this.mappingURL && this.mappingURL.length) ? this.mappingURL : `${this.providerURL}/oas`;
+      const specificationURL = (this.mappingUrl && this.mappingUrl.length) ? this.mappingUrl : `${this.providerUrl}/oas`;
       debug(`fetching API specification from ${specificationURL}`);
 
       // Make the call
@@ -109,7 +109,7 @@ export class Consumer {
         }
 
         this.apiSpecification = await SwaggerParser.dereference(body);
-        debug(`  retrieved API specification (${response.text.length}B)`);
+        debug(`  retrieved API specification.`);
       }
       catch (e) {
         return Promise.reject(e);
@@ -134,7 +134,7 @@ export class Consumer {
     // Iterate paths
     for (const pathKey in this.apiSpecification.paths) {
       const path = this.apiSpecification.paths[pathKey];
-      debug('path', pathKey, path);
+      debug('matching OAS path: ', pathKey, path);
 
       // Iterate operations
       for (const operationKey in path) {
@@ -146,7 +146,7 @@ export class Consumer {
           // Find response schema
           let responseSchema = null;
           for (const responseCode in operation.responses) {
-            if (responseCode[0] === '2') {
+            if (responseCode[0] === '2') { // 2xx
               if (operation.responses[responseCode].content && operation.responses[responseCode].content['application/json'] && operation.responses[responseCode].content['application/json'].schema)
                 responseSchema = operation.responses[responseCode].content['application/json'].schema; // TODO: Don't assume content type
             }
@@ -176,7 +176,7 @@ export class Consumer {
    * @param {Object} parameters
    */
   buildRequest(affordanceId, oasOperation, parameters) {
-    let url = `${this.providerURL}${oasOperation.url}`;
+    let url = `${this.providerUrl}${oasOperation.url}`;
     const method = oasOperation.method;
     let headers = {};
     let query = [];
@@ -385,7 +385,7 @@ export class Consumer {
         method:  request.method,
       });
 
-      debug('http response:', response.body);
+      debug('http response ok:', response.ok);
       return response.json()
     }
     catch (e) {
