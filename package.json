@@ -1,14 +1,14 @@
 {
   "name": "superdriver",
-  "version": "0.6.0",
-  "description": "Level 5 autonomous client",
+  "version": "0.7.0",
+  "description": "Level 5 autonomous, self-driving API client, https://superface.ai",
   "source": "src/superdriver.js",
   "main": "dist/superdriver.js",
   "module": "dist/superdriver.mjs",
   "unpkg": "dist/superdriver.umd.js",
   "types": "dist/superdriver.d.ts",
   "repository": "https://github.com/supermodel/superdriver.git",
-  "author": "Zdenek Nemec <zdenek@me.com>",
+  "author": "Zdenek Nemec <z@superface.ai>",
   "license": "MIT",
   "scripts": {
     "build": "microbundle",
