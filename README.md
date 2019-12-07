@@ -1,4 +1,4 @@
-# superdriver
+# Superdriver
 
 Level 5 self-driving client for Autonomous APIs. Superdriver is part of the **superface** communication mechanism. Visit [superface.ai](https://superface.ai) for more information.
 
@@ -14,13 +14,13 @@ $ npm install --save superdriver
 #### YARN 
 ```
 $ yarn add superdriver
-
 ```
 
 ### Browser
 
 Superdriver is universal library working both in Node.js and browser. See the `examples` folder for more details.
 
+### Making Call
 
 ```js
 import { Consumer } from "superdriver"
