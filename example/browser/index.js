@@ -2,9 +2,7 @@ import 'regenerator-runtime'
 
 import { Register, Consumer } from '../..'
 
-// const REGISTRY_URL = 'http://localhost:8010/proxy';
-const REGISTRY_URL = 'http://46.101.144.137:8282';
-
+const REGISTRY_URL = 'https://registry.superface.dev';
 const PROFILE_ID = 'http://supermodel.io/weather/profile/WeatherAlerts';
 
 const app = async function () {
