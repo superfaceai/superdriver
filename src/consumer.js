@@ -333,7 +333,7 @@ export class Consumer {
     // Always accept JSON
     headers['accept'] = 'application/json';
 
-    return { url, method, query, headers, body, security };
+    return { url, method, query, headers, body, security }; // TODO: searlize the body as string, do not send JSON
   }
 
   //
@@ -380,7 +380,7 @@ export class Consumer {
     }
 
     const response = await fetch(url, {
-      body: request.body,
+      body: JSON.stringify(request.body), // TODO: the serialization should be in build request, not here
       headers: request.headers,
       method: request.method,
     });
