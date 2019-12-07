@@ -48,6 +48,10 @@ const response = await client.perform({
 })
 ```
 
+## Demo 
+
+You can see Superdriver in action at [superface.glitch.me](http://superface.glitch.me), view its sources and remix it at the [Superface Glitch Project Page](https://glitch.com/edit/#!/superface).
+
 ## Superdriver API 
 
 Superdriver has two main components `Register` and `Consumer`. The `Register` serves for interactions with the superface registry. It allows for registering and unregistering superface provider as well as for services lookup. The `Consumer` then performs profile operations with the selected provider.
