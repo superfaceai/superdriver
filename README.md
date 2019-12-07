@@ -2,6 +2,10 @@
 
 Level 5 self-driving client for Autonomous APIs. Superdriver is part of the **superface** communication mechanism. Visit [superface.ai](https://superface.ai) for more information.
 
+## Demo 
+
+You can see Superdriver in action at [superface.glitch.me](http://superface.glitch.me), view its sources and remix it at the [Superface Glitch Project Page](https://glitch.com/edit/#!/superface).
+
 ## Usage
 
 ### Node.js
@@ -47,10 +51,6 @@ const response = await client.perform({
   ]
 })
 ```
-
-## Demo 
-
-You can see Superdriver in action at [superface.glitch.me](http://superface.glitch.me), view its sources and remix it at the [Superface Glitch Project Page](https://glitch.com/edit/#!/superface).
 
 ## Superdriver API 
 
