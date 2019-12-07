@@ -347,50 +347,52 @@ export class Consumer {
     if (request.body)
       debug(`  body:`, JSON.stringify(request.body))
 
-    try {
-      // Method and URL
-      let url = request.url
 
-      if (request.query) {
-        if (url.includes('?')) {
-          url = `${url}&${request.query.join('&')}`
-        } else {
-          url = `${url}?${request.query.join('&')}`
-        }
+    // Method and URL
+    let url = request.url
+
+    if (request.query) {
+      if (url.includes('?')) {
+        url = `${url}&${request.query.join('&')}`
+      } else {
+        url = `${url}?${request.query.join('&')}`
+      }
+    }
+
+    // Authentication
+    if (request.security && request.security.length) {
+      const securityId = request.security[0]; // Pick first available
+
+      if (!(securityId in this.authentication)) {
+        return Promise.reject(`security '${securityId}' credentials not provided`);
       }
 
-      // Authentication
-      if (request.security && request.security.length) {
-        const securityId = request.security[0]; // Pick first available
+      const security = this.authentication[securityId]
 
-        if (!(securityId in this.authentication)) {
-          return Promise.reject(`security '${securityId}' credentials not provided`);
-        }
+      if (securityId === 'basic') {
+        debug('  basic auth:', security.user); // do not log password!
 
-        const security = this.authentication[securityId]
-
-        if (securityId === 'basic') {
-          debug('  basic auth:', security.user); // do not log password!
-
-          request.headers['Authorization'] = `Basic ${base64.encode(security.user + ":" + security.password)}`
-        }
-        else {
-          return Promise.reject(`security '${securityId}' not yet supported, contact makers`);
-        }
+        request.headers['Authorization'] = `Basic ${base64.encode(security.user + ":" + security.password)}`
       }
-
-      const response = await fetch(url, {
-        body:    request.body,
-        headers: request.headers,
-        method:  request.method,
-      });
-
-      debug('http response ok:', response.ok);
-      return response.json()
+      else {
+        return Promise.reject(`security '${securityId}' not yet supported, contact makers`);
+      }
     }
-    catch (e) {
-      return Promise.reject(e);
+
+    const response = await fetch(url, {
+      body: request.body,
+      headers: request.headers,
+      method: request.method,
+    });
+
+    debug('http response ok:', response.ok);
+    if (!response.ok) {
+      const problemDetail = await response.json()
+
+      return Promise.reject(`problem communicating with the service provider: (${response.status}) - ${JSON.stringify(problemDetail)}`);
     }
+
+    return response.json()
   }
 
   //
