@@ -56,7 +56,7 @@ export class Consumer {
    *
    * @return {Promise}
    */
-  async perform(request) {
+  async perform(request, detail) {
     debug(`performing '${request.operation}' for ${this.providerUrl} service`);
     debug(`  parameters: ${JSON.stringify(request.parameters)}`);
     debug(`  expected response: ${JSON.stringify(request.response)}`);
@@ -72,6 +72,10 @@ export class Consumer {
 
     // Build HTTP request according to OpenAPI Specification and Profile request
     const httpRequest = this.buildRequest(request.operation, oasOperation, request.parameters);
+    if (detail) {
+      // Communicate the details about the request
+      detail = { httpRequest }
+    }
 
     // Execute the request
     const httpResponse = await this.execute(httpRequest);
