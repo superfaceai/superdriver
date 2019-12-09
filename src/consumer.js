@@ -74,7 +74,8 @@ export class Consumer {
     const httpRequest = this.buildRequest(request.operation, oasOperation, request.parameters);
     if (detail) {
       // Communicate the details about the request
-      detail = { httpRequest }
+      detail = { info: true, 'httpRequest': httpRequest }
+      console.log('superdriver: ', detail)
     }
 
     // Execute the request
