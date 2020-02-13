@@ -134,14 +134,14 @@ export class Consumer {
     // Iterate paths
     for (const pathKey in this.apiSpecification.paths) {
       const path = this.apiSpecification.paths[pathKey];
-      debug('matching OAS path: ', pathKey, path);
+      // debug('matching OAS path: ', pathKey, path);
 
       // Iterate operations
       for (const operationKey in path) {
         const operation = path[operationKey];
 
         if (operation[OAS_PROFILE_KEY] === fullProfileAffordanceId) {
-          debug(`found operation mapping`);
+          debug(`found operation mapping: `, JSON.stringify(operation));
 
           // Find response schema
           let responseSchema = null;
@@ -202,8 +202,13 @@ export class Consumer {
         // what is parameter full profile id?
         const fullParameterId = (OAS_PROFILE_KEY in parameter) ? parameter[OAS_PROFILE_KEY] : undefined;
 
+        // debug(`fullParameterId: "${fullParameterId}"`);
+        // debug('inputParameters:', inputParameters);
+        // debug('(fullParameterId in inputParameters)', (fullParameterId in inputParameters));
+
         // is parameter provided in user's input?
         const isProvided = (fullParameterId && (fullParameterId in inputParameters)) ? true : false;
+        
 
         // parameter value if provided
         let parameterValue = undefined;
