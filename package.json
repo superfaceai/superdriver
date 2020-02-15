@@ -1,6 +1,6 @@
 {
   "name": "superdriver",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "Level 5 autonomous, self-driving API client, https://superface.ai",
   "source": "src/superdriver.js",
   "main": "dist/superdriver.js",
