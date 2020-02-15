@@ -208,7 +208,7 @@ export class Consumer {
 
         // is parameter provided in user's input?
         const isProvided = (fullParameterId && (fullParameterId in inputParameters)) ? true : false;
-        
+
 
         // parameter value if provided
         let parameterValue = undefined;
@@ -384,11 +384,17 @@ export class Consumer {
       }
     }
 
-    const response = await fetch(url, {
-      body: JSON.stringify(request.body), // TODO: the serialization should be in build request, not here
+    const requestOptions = {
       headers: request.headers,
-      method: request.method,
-    });
+      method: request.method
+    }
+
+    if (request.body !== null) {
+      // TODO: the serialization should be in build request, not here
+      requestOptions.body = JSON.stringify(request.body)
+    }
+
+    const response = await fetch(url, requestOptions)
 
     debug('http response ok:', response.ok);
     if (!response.ok) {
