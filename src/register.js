@@ -4,14 +4,21 @@ const debug = Debug('superdriver:register');
 
 const CONFLICT_RELATION_KEY = 'conflictUrl';
 
+const DEFAULT_OPTIONS = {
+  fetch: fetch
+}
+
 export class Register {
   /**
    * Service Register proxy
    *
    * @param {String} registerUrl URL of the register to use
+   * @param {Object} options
+   * @param {Function} options.fetch custom implementation of fetch
    */
-  constructor(registerUrl) {
+  constructor(registerUrl, options) {
     this.registerUrl = registerUrl;
+    this.options     = Object.assign(DEFAULT_OPTIONS, options)
   }
 
   /**
@@ -20,7 +27,7 @@ export class Register {
    * @param {String} profileId Id of the profile the matching sarvice has to support
    */
   async findServices(profileId) {
-    const response = await fetch(
+    const response = await this.options.fetch(
       `${this.registerUrl}/api/registry?semanticProfile=${encodeURIComponent(profileId)}`,  // TODO: use superdriver instead of hard-coding URLs
       {
         headers: {
@@ -43,7 +50,7 @@ export class Register {
   /**
    * Register a new service at the registry
    *
-   * @param {Object} param0 Service details* 
+   * @param {Object} param0 Service details*
    * @param {string} param0.serviceUrl Url of the service being registered
    * @param {string} param0.mappingUrl Url of the mapping for the registered service
    * @param {string} param0.semanticProfile Id of the semantic profile
@@ -51,7 +58,7 @@ export class Register {
    */
   async registerService({ serviceUrl, mappingUrl, semanticProfile }) {
     debug('registering service', serviceUrl)
-    const response = await fetch(
+    const response = await this.options.fetch(
       `${this.registerUrl}/api/registry`,
       {
         method: 'POST',
@@ -83,7 +90,7 @@ export class Register {
 
       // Fetch conflicting service
       debug('fetching conflicting service ', conflictUrl)
-      const conflictResponse = await fetch(
+      const conflictResponse = await this.options.fetch(
         `${this.registerUrl}${conflictUrl}`,
         {
           headers: {
@@ -109,13 +116,13 @@ export class Register {
 
   /**
    *  Unregister a previous registered service
-   * 
+   *
    * @param {Object} param0 Service details
    */
   async unregisterService({ serviceUrl }) {
     debug('unregistering service', serviceUrl)
 
-    const response = await fetch(
+    const response = await this.options.fetch(
       `${this.registerUrl}${serviceUrl}`,
       {
         method: 'DELETE',

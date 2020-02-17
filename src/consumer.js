@@ -29,6 +29,10 @@ const OAS_SOURCE = {
   }
 }
 
+const DEFAULT_OPTIONS = {
+  fetch: fetch
+}
+
 export class Consumer {
   /**
    * Superdriver profile consumer' constructor
@@ -38,12 +42,15 @@ export class Consumer {
    * @param {String} service.profileId Profile identifier
    * @param {String} service.mappingUrl Optional mapping URL
    * @param {Object} service.authentication Optional Credentials for authentication
+   * @param {Object} options
+   * @param {Function} options.fetch custom implementation of fetch
    */
-  constructor(service) {
+  constructor(service, options) {
     this.providerUrl = service.url;
     this.profileId = service.profileId;
     this.mappingUrl = service.mappingUrl;
     this.authentication = service.authentication;
+    this.options     = Object.assign(DEFAULT_OPTIONS, options)
   }
 
   /**
@@ -95,7 +102,7 @@ export class Consumer {
 
       // Make the call
       try {
-        const response = await fetch(specificationURL, {
+        const response = await this.options.fetch(specificationURL, {
           headers: {
             'Accept': 'application/json'
           }
@@ -394,7 +401,7 @@ export class Consumer {
       requestOptions.body = JSON.stringify(request.body)
     }
 
-    const response = await fetch(url, requestOptions)
+    const response = await this.options.fetch(url, requestOptions)
 
     debug('http response ok:', response.ok);
     if (!response.ok) {
