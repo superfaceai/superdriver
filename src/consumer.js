@@ -10,11 +10,13 @@ import Debug from 'debug';
 import fetch from 'isomorphic-fetch'
 import SwaggerParser from 'swagger-parser'
 import * as base64 from './base64'
+import * as mapping from './util/mappingSpec'
+import mapResponse from './util/map'
 
 const debug = Debug('superdriver:consumer');
 
-const OAS_PROFILE_KEY = 'x-profile';
-const OAS_SUPER_KEY = 'x-super';
+// TODO: move to mappingSpec.js
+const OAS_SUPER_KEY = 'x-super';  
 const OAS_SUPER_SOURCE_KEY = 'source';
 const OAS_SUPER_VALUE_KEY = 'value';
 
@@ -50,7 +52,7 @@ export class Consumer {
     this.profileId = service.profileId;
     this.mappingUrl = service.mappingUrl;
     this.authentication = service.authentication;
-    this.options     = Object.assign(DEFAULT_OPTIONS, options)
+    this.options = Object.assign(DEFAULT_OPTIONS, options)
   }
 
   /**
@@ -74,7 +76,7 @@ export class Consumer {
     // Find in OpenAPI Specification the operation with given Profile's affordance id
     const oasOperation = this.findOperation(request.operation);
     if (!oasOperation) {
-      return Promise.reject(`No operation found for '${request.operation}`);
+      throw new Error(`No operation found for '${request.operation}'`);
     }
 
     // Build HTTP request according to OpenAPI Specification and Profile request
@@ -82,6 +84,7 @@ export class Consumer {
 
     // Execute the request
     const httpResponse = await this.execute(httpRequest);
+    debug('resp', httpResponse)
 
     // Normalize the response, translating it from the HTTP response to Profile
     const profileResponse = this.normalizeResponse(oasOperation, httpResponse, request.response);
@@ -112,7 +115,7 @@ export class Consumer {
         const body = await response.json()
 
         if (!response.body) {
-          return Promise.reject('No API specification found');
+          throw new Error('No API specification found');
         }
 
         this.apiSpecification = await SwaggerParser.dereference(body);
@@ -147,7 +150,7 @@ export class Consumer {
       for (const operationKey in path) {
         const operation = path[operationKey];
 
-        if (operation[OAS_PROFILE_KEY] === fullProfileAffordanceId) {
+        if (operation[mapping.OAS_PROFILE_KEY] === fullProfileAffordanceId) {
           debug(`found operation mapping: `, JSON.stringify(operation));
 
           // Find response schema
@@ -207,7 +210,7 @@ export class Consumer {
         const isRequired = ('required' in parameter) ? parameter.required : false;
 
         // what is parameter full profile id?
-        const fullParameterId = (OAS_PROFILE_KEY in parameter) ? parameter[OAS_PROFILE_KEY] : undefined;
+        const fullParameterId = (mapping.OAS_PROFILE_KEY in parameter) ? parameter[mapping.OAS_PROFILE_KEY] : undefined;
 
         // debug(`fullParameterId: "${fullParameterId}"`);
         // debug('inputParameters:', inputParameters);
@@ -231,18 +234,25 @@ export class Consumer {
               if (this.authentication && ('basic' in this.authentication))
                 parameterValue = this.authentication['basic'].user; // Use authentication user as the value
             }
+            else if (parameter[OAS_SUPER_KEY][OAS_SUPER_SOURCE_KEY] === OAS_SOURCE.apikey.key) {
+              if (this.authentication && ('apikey' in this.authentication))
+                parameterValue = this.authentication['apikey'].key;
+            }
           }
           else if (OAS_SUPER_VALUE_KEY in parameter[OAS_SUPER_KEY]) {
             // Use mapping-provided value directly
             parameterValue = parameter[OAS_SUPER_KEY][OAS_SUPER_VALUE_KEY];
           }
         }
-        //debug(`  is required ${isRequired}, profile id: ${fullParameterId}, provided: ${isProvided}, value: ${parameterValue}`);
+        debug(`  is required ${isRequired}, profile id: ${fullParameterId}, provided: ${isProvided}, value: ${parameterValue}`);
 
         if (isProvided || parameterValue) {
           if (parameter.in === 'query') {
             // Query parameters
             query.push(`${parameter.name}=${parameterValue}`);
+          }
+          else if (parameter.in === 'header') {
+            headers[parameter.name] = parameterValue;
           }
           else {
             // Brute-force replace
@@ -250,8 +260,7 @@ export class Consumer {
           }
         }
         else if (isRequired) {
-          console.error(`required parameter '${parameter.name}' (profile id: '${fullParameterId}') not provided`);
-          return null;
+          throw new Error(`required parameter '${parameter.name}' (profile id: '${fullParameterId}') not provided`);
         }
       });
     }
@@ -280,8 +289,8 @@ export class Consumer {
         // TODO: validate if a property is required
         const schemaProperties = oasOperation.details.requestBody.content[mediaType].schema.properties;
         for (const propertyKey in schemaProperties) {
-          if (schemaProperties[propertyKey][OAS_PROFILE_KEY]) {
-            const propertyId = schemaProperties[propertyKey][OAS_PROFILE_KEY];
+          if (schemaProperties[propertyKey][mapping.OAS_PROFILE_KEY]) {
+            const propertyId = schemaProperties[propertyKey][mapping.OAS_PROFILE_KEY];
             if (propertyId in inputParameters) {
               requestContentType.body[propertyKey] = inputParameters[propertyId];
             }
@@ -376,7 +385,7 @@ export class Consumer {
       const securityId = request.security[0]; // Pick first available
 
       if (!(securityId in this.authentication)) {
-        return Promise.reject(`security '${securityId}' credentials not provided`);
+        throw new Error(`security '${securityId}' credentials not provided`);
       }
 
       const security = this.authentication[securityId]
@@ -387,7 +396,7 @@ export class Consumer {
         request.headers['Authorization'] = `Basic ${base64.encode(security.user + ":" + security.password)}`
       }
       else {
-        return Promise.reject(`security '${securityId}' not yet supported, contact makers`);
+        throw new Error(`security '${securityId}' not yet supported, contact makers`);
       }
     }
 
@@ -406,8 +415,10 @@ export class Consumer {
     debug('http response ok:', response.ok);
     if (!response.ok) {
       const problemDetail = await response.json()
+      throw new Error(`problem communicating with the service provider:
+HTTP/1.1 ${response.status}
 
-      return Promise.reject(`problem communicating with the service provider: (${response.status}) - ${JSON.stringify(problemDetail)}`);
+${JSON.stringify(problemDetail)}`);
     }
 
     return response.json()
@@ -430,21 +441,17 @@ export class Consumer {
     });
     debug('fully qualified response properties', qualifiedProperties);
 
-    // Naive, flat traversal
-    // TODO: revisit for real objects
+    // Map response values to profile
     const result = {}
-    const schemaProperties = operation.responseSchema.properties;
-    for (const property in schemaProperties) {
-      const index = qualifiedProperties.indexOf(schemaProperties[property][OAS_PROFILE_KEY]);
+    const mappedResponse = mapResponse(operation.responseSchema, response);
+    debug('mapped response', mappedResponse);
+    for (const entry of mappedResponse) {
+      const index = qualifiedProperties.indexOf(entry.profileId)
       if (index >= 0) {
-        result[requestedResponse[index]] = response[property];
+        result[requestedResponse[index]] = entry.value;
       }
     }
 
     return result;
   }
 };
-
-// function IsEmptyObject(obj) {
-//   return Object.keys(obj).length === 0;
-// }

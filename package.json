@@ -22,6 +22,7 @@
   "dependencies": {
     "debug": "^4.1.1",
     "isomorphic-fetch": "2.2.1",
+    "lodash.get": "^4.4.2",
     "swagger-parser": "^8.0.3"
   },
   "devDependencies": {
