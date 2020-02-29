@@ -16,9 +16,12 @@ import mapResponse from './util/map'
 const debug = Debug('superdriver:consumer');
 
 // TODO: move to mappingSpec.js
-const OAS_SUPER_KEY = 'x-super';  
+const OAS_SUPER_KEY = 'x-super';
 const OAS_SUPER_SOURCE_KEY = 'source';
 const OAS_SUPER_VALUE_KEY = 'value';
+
+// TODO: move to some sort of superdriver spec
+const SUPER_AUTH_API_KEY = "apikey";
 
 const OAS_SOURCE = {
   basic: {
@@ -204,7 +207,7 @@ export class Consumer {
     //
     if (oasOperation.details.parameters) {
       oasOperation.details.parameters.forEach(parameter => {
-        // debug(`processing parameter...\n`, parameter);
+        debug(`processing parameter "${parameter.name}"...`);
 
         // is parameter required?
         const isRequired = ('required' in parameter) ? parameter.required : false;
@@ -235,8 +238,8 @@ export class Consumer {
                 parameterValue = this.authentication['basic'].user; // Use authentication user as the value
             }
             else if (parameter[OAS_SUPER_KEY][OAS_SUPER_SOURCE_KEY] === OAS_SOURCE.apikey.key) {
-              if (this.authentication && ('apikey' in this.authentication))
-                parameterValue = this.authentication['apikey'].key;
+              if (this.authentication && (SUPER_AUTH_API_KEY in this.authentication))
+                parameterValue = this.authentication[SUPER_AUTH_API_KEY].key;
             }
           }
           else if (OAS_SUPER_VALUE_KEY in parameter[OAS_SUPER_KEY]) {
@@ -249,14 +252,28 @@ export class Consumer {
         if (isProvided || parameterValue) {
           if (parameter.in === 'query') {
             // Query parameters
-            query.push(`${parameter.name}=${parameterValue}`);
+            debug('parameter value', parameterValue);
+            if (Array.isArray(parameterValue)) {
+              for (let value of parameterValue) {
+                query.push(`${parameter.name}=${value}`);
+              }
+            }
+            else {
+              query.push(`${parameter.name}=${parameterValue}`);
+            }
           }
           else if (parameter.in === 'header') {
+            // TODO: handle situation when header has more values
+            if (Array.isArray(parameterValue)) parameterValue = parameterValue[0]
             headers[parameter.name] = parameterValue;
           }
           else {
             // Brute-force replace
-            url = url.replace(`{${parameter.name}}`, parameterValue); // Consider proper RFC6570, tooling
+            // Consider proper RFC6570, tooling
+
+            // TODO: handle situation when parameter have more values
+            if (Array.isArray(parameterValue)) parameterValue = parameterValue[0]
+            url = url.replace(`{${parameter.name}}`, parameterValue);
           }
         }
         else if (isRequired) {
@@ -299,13 +316,13 @@ export class Consumer {
             // Check if source of the value parameter value is specified
             if (schemaProperties[propertyKey][OAS_SUPER_KEY].source === OAS_SOURCE.apikey.key) {
               // Source of the value is apikey's key
-              if (this.authentication && ('apikey' in this.authentication))
-                requestContentType.body[propertyKey] = this.authentication['apikey'].key;
+              if (this.authentication && (SUPER_AUTH_API_KEY in this.authentication))
+                requestContentType.body[propertyKey] = this.authentication[SUPER_AUTH_API_KEY].key;
             }
             else if (schemaProperties[propertyKey][OAS_SUPER_KEY].source === OAS_SOURCE.apikey.secret) {
               // Source of the value is apikey's secret
-              if (this.authentication && ('apikey' in this.authentication))
-                requestContentType.body[propertyKey] = this.authentication['apikey'].secret;
+              if (this.authentication && (SUPER_AUTH_API_KEY in this.authentication))
+                requestContentType.body[propertyKey] = this.authentication[SUPER_AUTH_API_KEY].secret;
             }
           }
         }
@@ -335,18 +352,29 @@ export class Consumer {
       const operationSecurity = oasOperation.details.security;
       operationSecurity.forEach(item => {
         const securityId = Object.keys(item)[0];
-        // debug('procesing security ID:', securityId);
+        debug('procesing security ID:', securityId);
 
         // Figure out what schema the security id is
         if (!(securityId in securityComponent)) {
           debug(`security '${securityId}' is not defined in security components`);
           return null;
         }
-        const securityType = securityComponent[securityId].scheme;
-        debug('security type:', securityType);
-        security.push(securityType);
-      });
 
+        let entry = { 
+          type: securityComponent[securityId].type, 
+          scheme: securityComponent[securityId].scheme 
+        }
+
+        // Normalize OAS "apiKey"
+        if (entry.type === "apiKey") {
+          entry.scheme = SUPER_AUTH_API_KEY; // Warning: Casing is "apiKey" in OAS but "apikey" in Superface auth structure!
+          entry.in = securityComponent[securityId].in
+          entry.name = securityComponent[securityId].name
+        }
+
+        debug('security:', entry);
+        security.push(entry);
+      });
     }
 
     // TODO: Process other elements like headers, consumes / produces
@@ -368,35 +396,38 @@ export class Consumer {
     if (request.body)
       debug(`  body:`, JSON.stringify(request.body))
 
+    // Authentication
+    // Todo: as this modifies headers and query params, consider moving this block to buildRequest()
+    if (request.security && request.security.length) {
+      const securityId = request.security[0]; // Pick first available
+      if (!(securityId.scheme in this.authentication)) {
+        throw new Error(`security '${JSON.stringify(securityId)}' credentials not provided`);
+      }
+
+      const security = this.authentication[securityId.scheme]
+      if (securityId.scheme === 'basic') {
+        debug('  basic auth:', security.user); // do not log password!
+        request.headers['Authorization'] = `Basic ${base64.encode(security.user + ":" + security.password)}`
+      }
+      if (securityId.scheme === SUPER_AUTH_API_KEY) {
+        debug('  apikey authentication');
+        if (securityId.in === 'query') {
+          request.query.push(`${securityId.name}=${security.key}`);
+        }
+        else throw new Error(`apikey security in '${securityId.in}' not yet supported, contact makers`); 
+      }
+      else {
+        throw new Error(`security '${JSON.stringify(securityId)}' not yet supported, contact makers`);
+      }
+    }
 
     // Method and URL
     let url = request.url
-
     if (request.query) {
       if (url.includes('?')) {
         url = `${url}&${request.query.join('&')}`
       } else {
         url = `${url}?${request.query.join('&')}`
-      }
-    }
-
-    // Authentication
-    if (request.security && request.security.length) {
-      const securityId = request.security[0]; // Pick first available
-
-      if (!(securityId in this.authentication)) {
-        throw new Error(`security '${securityId}' credentials not provided`);
-      }
-
-      const security = this.authentication[securityId]
-
-      if (securityId === 'basic') {
-        debug('  basic auth:', security.user); // do not log password!
-
-        request.headers['Authorization'] = `Basic ${base64.encode(security.user + ":" + security.password)}`
-      }
-      else {
-        throw new Error(`security '${securityId}' not yet supported, contact makers`);
       }
     }
 
@@ -406,7 +437,7 @@ export class Consumer {
     }
 
     if (request.body !== null) {
-      // TODO: the serialization should be in build request, not here
+      // TODO: the serialization should be in buildRequest(), not here
       requestOptions.body = JSON.stringify(request.body)
     }
 
