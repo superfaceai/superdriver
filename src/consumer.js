@@ -90,7 +90,7 @@ export class Consumer {
     debug('resp', httpResponse)
 
     // Normalize the response, translating it from the HTTP response to Profile
-    const profileResponse = this.normalizeResponse(oasOperation, httpResponse, request.response);
+    const profileResponse = this.normalizeResponse(request, oasOperation, httpResponse);
 
     debug('result:', profileResponse);
 
@@ -198,7 +198,7 @@ export class Consumer {
     // Fully qualified the input parameters
     let inputParameters = {}
     for (const parameterId in parameters) {
-      inputParameters[`${this.profileId}#${affordanceId}/${parameterId}`] = parameters[parameterId];
+      inputParameters[qualifyValueIdentifer(this.profileId, affordanceId, parameterId)] = parameters[parameterId];
     }
     debug('fully qualified input parameters:', JSON.stringify(inputParameters));
 
@@ -215,13 +215,12 @@ export class Consumer {
         // what is parameter full profile id?
         const fullParameterId = (mapping.OAS_PROFILE_KEY in parameter) ? parameter[mapping.OAS_PROFILE_KEY] : undefined;
 
-        // debug(`fullParameterId: "${fullParameterId}"`);
-        // debug('inputParameters:', inputParameters);
-        // debug('(fullParameterId in inputParameters)', (fullParameterId in inputParameters));
+        debug(`fullParameterId: "${fullParameterId}"`);
+        debug('inputParameters:', inputParameters);
+        debug('(fullParameterId in inputParameters)', (fullParameterId in inputParameters));
 
         // is parameter provided in user's input?
         const isProvided = (fullParameterId && (fullParameterId in inputParameters)) ? true : false;
-
 
         // parameter value if provided
         let parameterValue = undefined;
@@ -458,7 +457,7 @@ ${JSON.stringify(problemDetail)}`);
   //
   // Normalizes the response to the profile
   //
-  normalizeResponse(operation, response, requestedResponse) {
+  normalizeResponse(request, operation, response) {
     // Sanity check
     if (!operation.responseSchema) {
       debug('no response mapping');
@@ -466,10 +465,10 @@ ${JSON.stringify(problemDetail)}`);
     }
 
     // Fully qualify the requested response
-    let qualifiedProperties = [];
-    requestedResponse.forEach((element) => {
-      qualifiedProperties.push(`${this.profileId}#${element}`);
+    let qualifiedProperties = request.response.map((valueIdentifier) => {
+      return qualifyValueIdentifer(this.profileId, request.operation, valueIdentifier)
     });
+
     debug('fully qualified response properties', qualifiedProperties);
 
     // Map response values to profile
@@ -477,12 +476,64 @@ ${JSON.stringify(problemDetail)}`);
     const mappedResponse = mapResponse(operation.responseSchema, response);
     debug('mapped response', mappedResponse);
     for (const entry of mappedResponse) {
+      debug('processing:', entry)
       const index = qualifiedProperties.indexOf(entry.profileId)
-      if (index >= 0) {
-        result[requestedResponse[index]] = entry.value;
+      if (index < 0)
+        continue;
+
+      const valueIdentifier = request.response[index];
+
+      // non-collection values
+      if (entry.cursor.length === 1) {
+        result[valueIdentifier] = entry.value;
+        continue;
       }
+
+      // collection value
+      const re = new RegExp('#\/(.*)\/' + valueIdentifier , 'g');
+      let collectionId = re.exec(entry.profileId);
+      if (!collectionId) collectionId = '_';
+      debug('collection value key:', collectionId);
+
+      // create array if does not exists
+      if (!(collectionId in result)) {
+        result[collectionId] = []
+      }
+      
+      // Append values accoreingly
+      // TODO: work out for deeper levels
+      entry.value.forEach((value, j) => {
+        if (result[collectionId][j]) {
+          // Wrapper object does not exists
+          result[collectionId][j][valueIdentifier] = value  
+        }
+        else {
+          // Wrapper object does exists
+          result[collectionId].push({[valueIdentifier]: value})
+        } 
+      });
     }
 
     return result;
   }
 };
+
+/**
+ * Fully qualifies a value identifier
+ *
+ * e.g.
+ * 
+ * "name" (identifier) -> "http://supermodel.io/superface/CRM/profile/Customers#/RetrieveCustomers/name"
+ * 
+ * @param {string} baseProfile Base profile id
+ * @param {string} affordance Affordance id
+ * @param {string} identifier identifier of the value
+ */
+function qualifyValueIdentifer(baseProfile, affordance, identifier) {
+  if (identifier.startsWith('http')) {
+    return identifier;
+  }
+  else {
+    return `${baseProfile}#${affordance}/${identifier}`;
+  }  
+}

@@ -43,11 +43,11 @@ const response = await client.perform({
     addressLocality
   },
   response: [
-    "ActualWeatherAlert/title",
-    "ActualWeatherAlert/description",
-    "ActualWeatherAlert/severity",
-    "ActualWeatherAlert/startDate",
-    "ActualWeatherAlert/endDate"
+    "title",
+    "description",
+    "severity",
+    "startDate",
+    "endDate"
   ]
 })
 ```

@@ -152,7 +152,7 @@ function mapResponse(mappingSchema, responseData) {
     // Solve one result at a time 
     let val = extractValue(responseData, mapping.cursor);
 
-    // Extend the value mapping object with the actual valeus
+    // Extend the value mapping object with the actual values
     mapping.value = val;
   }
 
