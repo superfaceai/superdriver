@@ -198,7 +198,7 @@ export class Consumer {
     // Fully qualified the input parameters
     let inputParameters = {}
     for (const parameterId in parameters) {
-      inputParameters[qualifyValueIdentifer(this.profileId, affordanceId, parameterId)] = parameters[parameterId];
+      inputParameters[qualifyValueIdentifer(parameterId, this.profileId, affordanceId)] = parameters[parameterId];
     }
     debug('fully qualified input parameters:', JSON.stringify(inputParameters));
 
@@ -466,7 +466,7 @@ ${JSON.stringify(problemDetail)}`);
 
     // Fully qualify the requested response
     let qualifiedProperties = request.response.map((valueIdentifier) => {
-      return qualifyValueIdentifer(this.profileId, request.operation, valueIdentifier)
+      return qualifyValueIdentifer(valueIdentifier, this.profileId)
     });
 
     debug('fully qualified response properties', qualifiedProperties);
@@ -525,13 +525,17 @@ ${JSON.stringify(problemDetail)}`);
  * 
  * "name" (identifier) -> "http://supermodel.io/superface/CRM/profile/Customers#/RetrieveCustomers/name"
  * 
+ * @param {string} identifier identifier of the value
  * @param {string} baseProfile Base profile id
  * @param {string} affordance Affordance id
- * @param {string} identifier identifier of the value
  */
-function qualifyValueIdentifer(baseProfile, affordance, identifier) {
+function qualifyValueIdentifer(identifier, baseProfile, affordance) {
+   // TODO: consider better handling of affordance in identifier
   if (identifier.startsWith('http')) {
     return identifier;
+  }
+  else if (!affordance) {
+    return `${baseProfile}#${identifier}`;
   }
   else {
     return `${baseProfile}#${affordance}/${identifier}`;
